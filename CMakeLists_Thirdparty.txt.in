@@ -1,0 +1,70 @@
+cmake_minimum_required(VERSION 3.25)
+project(thirdparty NONE)
+include(ExternalProject)
+
+#ExternalProject_Add(oneDNN
+#    GIT_REPOSITORY https://github.com/oneapi-src/oneDNN.git
+#    GIT_TAG v3.5.3
+#    PREFIX "${THIRDPARTY_DIR}/oneDNN"
+#    CMAKE_ARGS
+#                "-DCMAKE_INSTALL_PREFIX=${THIRDPARTY_DIR}/oneDNN"
+#                "-DCMAKE_DEBUG_POSTFIX=d"
+#                "-DDNNL_LIBRARY_TYPE=STATIC"
+#                "-DDNNL_ENABLE_WORKLOAD=TRAINING"
+#                "-DDNNL_GPU_RUNTIME=OCL"
+#                "-DDNNL_BUILD_DOC=OFF"
+#                "-DDNNL_BUILD_EXAMPLES=OFF"
+#                "-DDNNL_BUILD_TESTS=OFF"
+#                "-DOPENCLROOT=${OCLSDK}"
+#)
+
+ExternalProject_Add(mimalloc
+    GIT_REPOSITORY https://github.com/microsoft/mimalloc.git
+    GIT_TAG v2.1.7
+    PREFIX "${THIRDPARTY_DIR}/mimalloc"
+    CMAKE_ARGS "-DCMAKE_INSTALL_PREFIX=${THIRDPARTY_DIR}/mimalloc"
+        "-DCMAKE_DEBUG_POSTFIX=d"
+)
+
+#ExternalProject_Add(utf8proc
+#    GIT_REPOSITORY https://github.com/JuliaStrings/utf8proc.git
+#    GIT_TAG v2.10.0
+#    PREFIX "${THIRDPARTY_DIR}/utf8proc"
+#    CMAKE_ARGS "-DCMAKE_INSTALL_PREFIX=${THIRDPARTY_DIR}/utf8proc"
+#        "-DCMAKE_DEBUG_POSTFIX=d"
+#)
+
+#ExternalProject_Add(googletest
+#    GIT_REPOSITORY https://github.com/google/googletest.git
+#    GIT_TAG v1.15.2
+#    PREFIX "${THIRDPARTY_DIR}/googletest"
+#    CMAKE_ARGS "-DCMAKE_INSTALL_PREFIX=${THIRDPARTY_DIR}/googletest"
+#        "-DCMAKE_DEBUG_POSTFIX=d"
+#)
+
+#ExternalProject_Add(oniguruma
+#    GIT_REPOSITORY https://github.com/kkos/oniguruma.git
+#    GIT_TAG v6.9.9
+#    PREFIX "${THIRDPARTY_DIR}/oniguruma"
+#    CMAKE_ARGS "-DCMAKE_INSTALL_PREFIX=${THIRDPARTY_DIR}/oniguruma"
+#        "-DCMAKE_DEBUG_POSTFIX=d"
+#)
+
+#ExternalProject_Add(abseil
+#    GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
+#    GIT_TAG 20240722.0
+#    PREFIX "${THIRDPARTY_DIR}/abseil"
+#    CMAKE_ARGS "-DCMAKE_INSTALL_PREFIX=${THIRDPARTY_DIR}/abseil"
+#        "-DCMAKE_DEBUG_POSTFIX=d"
+#    DEPENDS googletest
+#)
+
+#ExternalProject_Add(re2
+#    GIT_REPOSITORY https://github.com/google/re2.git
+#    GIT_TAG 2024-07-02
+#    PREFIX "${THIRDPARTY_DIR}/re2"
+#    CMAKE_ARGS "-DCMAKE_INSTALL_PREFIX=${THIRDPARTY_DIR}/re2"
+#        "-DCMAKE_PREFIX_PATH=${THIRDPARTY_DIR}/abseil"
+#        "-DCMAKE_DEBUG_POSTFIX=d"
+#    DEPENDS abseil
+#)
