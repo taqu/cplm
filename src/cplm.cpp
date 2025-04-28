@@ -1399,7 +1399,7 @@ bool Model::open(const char* path, int32_t context)
     build_tokenizer();
 
         transformer_.n_bytes_ = count_bytes("model.", nullptr, &transformer_.n_params_);
-    transformer_.forward_ = forward;
+    transformer_.forward_ = cplm::forward;
     transformer_.n_bandwidth_ = transformer_.n_bytes_ - count_bytes("model.embed.", nullptr, nullptr);
     if(nullptr == tensors_.find("model.output.weight", 0)){
         transformer_.n_bandwidth_ += tensors_.find("model.embed.weight", 0)->size_;
@@ -1430,7 +1430,7 @@ bool Model::open(uint64_t size, const void* data, int32_t context)
     get_weights();
     build_tokenizer();
     transformer_.n_bytes_ = count_bytes("model.", nullptr, &transformer_.n_params_);
-    transformer_.forward_ = forward;
+    transformer_.forward_ = cplm::forward;
     transformer_.n_bandwidth_ = transformer_.n_bytes_ - count_bytes("model.embed.", nullptr, nullptr);
     if(nullptr == tensors_.find("model.output.weight", 0)){
         transformer_.n_bandwidth_ += tensors_.find("model.embed.weight", 0)->size_;
@@ -1486,6 +1486,7 @@ Result Model::generate_one(const char8_t* prompt, const Params& params)
 {
     assert(nullptr != prompt);
 
+    sampler_.initialize(transformer_.config_.vocab_size_, params.seed_, params.temperature_, params.minp_);
     Result result = {};
     // encode the (string) prompt into tokens sequence
     int32_t* prompt_tokens = (int32_t*)CPLM_MALLOC(Tokenizer::bound(strlen((const char*)prompt)) * sizeof(int32_t));
@@ -1564,6 +1565,11 @@ Result Model::generate_one(const char8_t* prompt, const Params& params)
     result.logits_hash_ = logits_hash;
     CPLM_FREE(prompt_tokens);
     return result;
+}
+
+const float* Model::forward(int32_t token, int32_t pos, uint32_t flags)
+{
+    return transformer_.forward_(&transformer_, token, pos, flags);
 }
 
 void Model::get_config(int32_t context)

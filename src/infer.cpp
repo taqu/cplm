@@ -74,7 +74,7 @@ namespace
     float dotprod_fp8(void* w, int32_t n, int32_t i, float* x)
     {
         char* r = (char*)w + i * n;
-#if defined(__AVX__)
+#if defined(__AVX2__)
         assert(n % 16 == 0);
         __m256 acc0 = _mm256_setzero_ps(), acc1 = _mm256_setzero_ps();
         for(int32_t j = 0; j < n; j += 16) {
@@ -435,6 +435,14 @@ float* forward(Transformer* transformer, int32_t token, int32_t pos, uint32_t fl
             }
         }
     }
+ //   {
+	//	matmul(s->logits_, x, w->wcls_, NULL, p->dim_, p->vocab_size_, dotprod);
+	//	unsigned logits_hash = 0;
+	//		for (int k = 0; k < transformer->config_.vocab_size_; ++k) {
+	//			logits_hash = logits_hash * 5 + *(unsigned*)(&s->logits_[k]);
+	//		}
+	//		printf("[%d] logits %X\n", pos, logits_hash);
+	//}
 
     if(flags & FF_UPDATE_KV_ONLY) {
         // only update kv cache and don't output logits

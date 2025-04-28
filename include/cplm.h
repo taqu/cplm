@@ -419,22 +419,22 @@ struct Weights
 struct RunState
 {
     // current wave of activations
-    float* x_;      // activation at current time stamp (dim,)
-    float* xb_;     // same, but inside a residual branch (dim,)
-    float* xb2_;    // an additional buffer just for convenience (dim,)
-    float* hb_;     // buffer for hidden dimension in the ffn (hidden_dim,)
-    float* hb2_;    // buffer for hidden dimension in the ffn (hidden_dim,)
-    float* he_;     // buffer for hidden dimension in the ffn (n_experts_ac,hidden_dim,)
-    float* q_;      // query (dim,)
-    float* k_;      // key (dim,)
-    float* v_;      // value (dim,)
-    float* att_;    // buffer for scores/attention values (n_heads, seq_len)
-    float* exp_;    // buffer for MoE computations (n_experts + n_experts_ac * 2)
-    float* logits_; // output logits
+    float* x_ = nullptr;      // activation at current time stamp (dim,)
+    float* xb_ = nullptr;     // same, but inside a residual branch (dim,)
+    float* xb2_ = nullptr;    // an additional buffer just for convenience (dim,)
+    float* hb_ = nullptr;     // buffer for hidden dimension in the ffn (hidden_dim,)
+    float* hb2_ = nullptr;    // buffer for hidden dimension in the ffn (hidden_dim,)
+    float* he_ = nullptr;     // buffer for hidden dimension in the ffn (n_experts_ac,hidden_dim,)
+    float* q_ = nullptr;      // query (dim,)
+    float* k_ = nullptr;      // key (dim,)
+    float* v_ = nullptr;      // value (dim,)
+    float* att_ = nullptr;    // buffer for scores/attention values (n_heads, seq_len)
+    float* exp_ = nullptr;    // buffer for MoE computations (n_experts + n_experts_ac * 2)
+    float* logits_ = nullptr; // output logits
     // kv cache
-    int32_t kvbits_;    // 8 for fp8, 16 for fp16; determines type of void* below
-    void* key_cache_;   // (layer, seq_len, dim)
-    void* value_cache_; // (layer, seq_len, dim)
+    int32_t kvbits_ = 0;    // 8 for fp8, 16 for fp16; determines type of void* below
+    void* key_cache_ = nullptr;   // (layer, seq_len, dim)
+    void* value_cache_ = nullptr; // (layer, seq_len, dim)
 };
 
 struct Transformer
@@ -494,6 +494,7 @@ public:
 
     std::vector<Result> generate(const char8_t* prompt, const Params& params);
     Result generate_one(const char8_t* prompt, const Params& params);
+    const float* forward(int32_t token, int32_t pos, uint32_t flags);
 private:
     Model(const Model&) = delete;
     Model& operator=(const Model&) = delete;

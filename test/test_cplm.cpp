@@ -5,7 +5,7 @@ TEST_CASE("Load calm" "[cplm]")
 {
 	using namespace cplm;
 	Model model;
-	bool result = model.open("tinyllama.calm", 128);
+	bool result = model.open("tinyllm.calm", 128);
 	CHECK(result);
 
 	const Tensors& tensors = model.get_tensors();
@@ -25,8 +25,9 @@ TEST_CASE("Test Model" "[cplm]")
 {
 	using namespace cplm;
 	Model model;
-	bool r = model.open("tinyllama.calm", 128);
+	bool r = model.open("tinyllama.calm", 256);
 	CHECK(r);
+	const float* logits = model.forward(0, 0, 0);
 	Model::Params params;
 	params.temperature_ = 0.0f;
 	Result result = model.generate_one(u8"Q: What is the meaning of life?", params);
