@@ -315,7 +315,7 @@ public:
 
     const char8_t* decode(int32_t prev_token, int32_t token) const;
     std::u8string decode(int32_t size, const int32_t* tokens) const;
-    int32_t encode(const char8_t* text, uint32_t flags, int32_t* tokens) const;
+    std::vector<int32_t> encode(const char8_t* text, uint32_t flags) const;
     int32_t find(const char8_t* token) const;
 private:
     Tokenizer(const Tokenizer&) = delete;
@@ -327,7 +327,7 @@ private:
     static void heap_insert(Merge* heap, int32_t n_heap, Merge merge);
     static void heap_poptop(Merge* heap, int32_t n_heap);
     int32_t merge_tokens_tryadd(Merge* heap, int32_t n_heap, int32_t lpos, int32_t lid, int32_t rpos, int32_t rid) const;
-    int32_t merge_tokens(int32_t* tokens, int32_t n_tokens) const;
+    void merge_tokens(std::vector<int32_t>& tokens) const;
 
     const char** vocab_;
     const float* vocab_scores_;
@@ -453,6 +453,7 @@ struct Transformer
 struct Result
 {
     std::u8string text_;
+    int32_t num_tokens_;
     double duration_;
     uint64_t read_bytes_;
     uint32_t logits_hash_;

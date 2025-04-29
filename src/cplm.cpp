@@ -2,10 +2,13 @@
 #ifdef _WIN32
 #    include <Windows.h>
 #endif
-#include "infer.h"
+#include <limits>
 #include <algorithm>
 #include <sstream>
+
 #include <utf8proc.h>
+
+#include "infer.h"
 
 // new/delete
 void* operator new(std::size_t size)
@@ -1076,15 +1079,17 @@ std::u8string Tokenizer::decode(int32_t size, const int32_t* tokens) const
     return ss.str();
 }
 
-int32_t Tokenizer::encode(const char8_t* text, uint32_t flags, int32_t* tokens) const
+std::vector<int32_t> Tokenizer::encode(const char8_t* text, uint32_t flags) const
 {
     assert(nullptr != text);
     char8_t* text_nfkc = (char8_t*)utf8proc_NFKC((const utf8proc_uint8_t*)text);
-    int32_t n_tokens = 0;
+    size_t len = strlen((const char*)text_nfkc);
+    std::vector<int32_t> tokens;
+    tokens.reserve(len);
 
     // add optional BOS token, if desired
     if((flags & TF_ENCODE_BOS) && 0 <= bos_id_) {
-        tokens[n_tokens++] = bos_id_;
+        tokens.push_back(bos_id_);
     }
 
     // process the raw (UTF-8) byte sequence of the input string
@@ -1109,7 +1114,7 @@ int32_t Tokenizer::encode(const char8_t* text, uint32_t flags, int32_t* tokens) 
                     int32_t sid = str_lookup((const char*)special, sorted_vocab_, vocab_size_);
                     if(sid != -1) {
                         // we found special codepoint in vocab, add it as a token
-                        tokens[n_tokens++] = sid;
+                        tokens.push_back(sid);
                         c = e + 2;
                         continue;
                     }
@@ -1129,7 +1134,7 @@ int32_t Tokenizer::encode(const char8_t* text, uint32_t flags, int32_t* tokens) 
                     int32_t sid = str_lookup(special, sorted_vocab_, vocab_size_);
                     if(sid != -1) {
                         // we found special codepoint in vocab, add it as a token
-                        tokens[n_tokens++] = sid;
+                        tokens.push_back(sid);
                         c = e + 1;
                         continue;
                     }
@@ -1148,26 +1153,26 @@ int32_t Tokenizer::encode(const char8_t* text, uint32_t flags, int32_t* tokens) 
 
         if(id != -1) {
             // we found this codepoint in vocab, add it as a token
-            tokens[n_tokens++] = id;
+            tokens.push_back(id);
         } else if(0 <= byte_fallbacks_) {
             // byte_fallback encoding: just encode each byte as a token
             for(char8_t* fb = codepoint; *fb != '\0'; ++fb) {
-                tokens[n_tokens++] = (unsigned char)*fb + byte_fallbacks_;
+                tokens.push_back((uint8_t)*fb + byte_fallbacks_);
             }
         }
     }
 
     // optimized heap-based merge
-    n_tokens = merge_tokens(tokens, n_tokens);
+    merge_tokens(tokens);
 
     // add optional EOS token, if desired
     if(flags & TF_ENCODE_EOS) {
-        tokens[n_tokens++] = eos_id_;
+        tokens.push_back(eos_id_);
     }
 
-    assert(n_tokens <= bound(static_cast<int32_t>(strlen((const char*)text_nfkc))));
+    assert(static_cast<int32_t>(tokens.size()) <= bound(static_cast<int32_t>(strlen((const char*)text_nfkc))));
     mi_free(text_nfkc);
-    return n_tokens;
+    return tokens;
 }
 
 int32_t Tokenizer::find(const char8_t* token) const
@@ -1233,9 +1238,10 @@ int32_t Tokenizer::merge_tokens_tryadd(Merge* heap, int32_t n_heap, int32_t lpos
     return n_heap;
 }
 
-int32_t Tokenizer::merge_tokens(int32_t* tokens, int32_t n_tokens) const
+void Tokenizer::merge_tokens(std::vector<int32_t>& tokens) const
 {
     // create heap for all token merge pairs
+    int32_t n_tokens = static_cast<int32_t>(tokens.size());
     Merge* heap = (Merge*)CPLM_MALLOC(2 * n_tokens * sizeof(struct Merge));
     int32_t n_heap = 0;
 
@@ -1282,8 +1288,7 @@ int32_t Tokenizer::merge_tokens(int32_t* tokens, int32_t n_tokens) const
             tokens[nm_tokens++] = tokens[i];
         }
     }
-
-    return nm_tokens;
+    tokens.resize(static_cast<size_t>(nm_tokens));
 }
 
 namespace
@@ -1291,7 +1296,7 @@ namespace
     int32_t sample_argmax(float* logits, int32_t n)
     {
         int32_t max_i = -1;
-        float max_p = -FLT_MAX;
+        float max_p = (std::numeric_limits<float>::lowest)();
         for(int32_t i = 0; i < n; i++) {
             max_i = logits[i] > max_p ? i : max_i;
             max_p = logits[i] > max_p ? logits[i] : max_p;
@@ -1302,7 +1307,7 @@ namespace
     int32_t sample_minp(float* logits, int32_t n, float minp, float temperature, float coin)
     {
         // find max logit; we will use this to derive minp cutoff (in log space), since minp is scale-invariant (wrt softmax)
-        float max_logit = -FLT_MAX;
+        float max_logit = (std::numeric_limits<float>::lowest)();
         for(int32_t i = 0; i < n; i++) {
             max_logit = logits[i] > max_logit ? logits[i] : max_logit;
         }
@@ -1348,7 +1353,7 @@ void Sampler::initialize(int32_t vocab_size, uint64_t seed, float temperature, f
 float Sampler::sample_prob(int32_t idx, float* logits, int32_t size) const
 {
     // find max value (for numerical stability)
-    float max_val = -FLT_MAX;
+    float max_val = (std::numeric_limits<float>::lowest)();
     for(int32_t i = 0; i < size; i++) {
         max_val = logits[i] > max_val ? logits[i] : max_val;
     }
@@ -1489,8 +1494,8 @@ Result Model::generate_one(const char8_t* prompt, const Params& params)
     sampler_.initialize(transformer_.config_.vocab_size_, params.seed_, params.temperature_, params.minp_);
     Result result = {};
     // encode the (string) prompt into tokens sequence
-    int32_t* prompt_tokens = (int32_t*)CPLM_MALLOC(Tokenizer::bound(strlen((const char*)prompt)) * sizeof(int32_t));
-    int32_t num_prompt_tokens = tokenizer_.encode(prompt, TF_ENCODE_BOS, prompt_tokens);
+    std::vector<int32_t> prompt_tokens = tokenizer_.encode(prompt, TF_ENCODE_BOS);
+    int32_t num_prompt_tokens = static_cast<int32_t>(prompt_tokens.size());
     if(num_prompt_tokens < 1) {
         fprintf(stderr, "something is wrong, expected at least 1 prompt token\n");
         return result;
@@ -1560,10 +1565,10 @@ Result Model::generate_one(const char8_t* prompt, const Params& params)
     //        (double)(end - start) / 1000, logits_hash);
 
     result.text_ = ss.str();
+    result.num_tokens_ = pos;
     result.duration_ = timer.milliseconds();
     result.read_bytes_ = read_bytes;
     result.logits_hash_ = logits_hash;
-    CPLM_FREE(prompt_tokens);
     return result;
 }
 
