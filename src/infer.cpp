@@ -434,7 +434,7 @@ float* forward(::Transformer* transformer, int32_t token, int32_t pos, uint32_t 
     int32_t kv_mul = p->n_heads_ / p->n_kv_heads_; // integer multiplier of the kv sharing in multiquery
 
     // following "attention sinks" from StreamingLLM we keep the first few tokens in the KV cache as is
-    int32_t kv_sink = pos >= p->seq_len_ ? KV_SINKS : 0;
+    int32_t kv_sink = pos >= p->seq_len_ ? CPLM_KV_SINKS : 0;
     int32_t kv_pos = kv_sink + (pos - kv_sink) % (p->seq_len_ - kv_sink);
     int32_t kv_len = pos >= p->seq_len_ ? p->seq_len_ : pos + 1;
 

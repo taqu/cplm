@@ -100,39 +100,27 @@ set_target_properties(MIMALLOC PROPERTIES IMPORTED_LOCATION_DEBUG "mimalloc-stat
 #add_library(ONEDNN MODULE IMPORTED)
 #set_target_properties(ONEDNN PROPERTIES IMPORTED_LOCATION_DEBUG "dnnld.lib" IMPORTED_LOCATION_RELEASE "dnnl.lib")
 
-#find_package(CUDA REQUIRED)
-
-########################################################################
-# Sources
 set(HEADERS
-    "${HEADER_DIR}/cplm.h"
-    "${HEADER_DIR}/model.h"
-    "${HEADER_DIR}/infer.h"
-    "${HEADER_DIR}/gguf.h"
-    "${HEADER_DIR}/utf8proc.h")
+    ${HEADER_DIR}/cplm.h
+    ${HEADER_DIR}/gguf.h
+    ${HEADER_DIR}/infer.h
+    ${HEADER_DIR}/model.h
+    ${HEADER_DIR}/utf8proc.h)
 
 set(SOURCES
-    "${SOURCE_DIR}/cplm.cpp"
-    "${SOURCE_DIR}/infer.cpp"
-    "${SOURCE_DIR}/gguf.cpp"
-    "${SOURCE_DIR}/utf8proc.c")
+    ${SOURCE_DIR}/cplm.cpp
+    ${SOURCE_DIR}/gguf.cpp
+    ${SOURCE_DIR}/infer.cpp
+    ${SOURCE_DIR}/utf8proc.c
+    ${SOURCE_DIR}/main.cpp)
 
 set(CUDA_SOURCES
-    "${SOURCE_DIR}/infer.cu")
-set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};-gencode arch=compute_80,code=sm_80 -gencode arch=compute_90,code=compute_90 --threads 2 -std=c++20)
-#cuda_compile(INFER_O ${CUDA_SOURCES})
+    ${SOURCE_DIR}/infer.cu)
 
 source_group("include" FILES ${HEADERS})
-source_group("src" FILES ${SOURCES} "${SOURCE_DIR}/main.cpp" "${CUDA_SOURCES}")
+source_group("src" FILES ${SOURCES} ${CUDA_SOURCES})
 
-set(FILES ${HEADERS} ${SOURCES} "${SOURCE_DIR}/main.cpp")
-
-set(OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin")
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${OUTPUT_DIRECTORY}")
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG "${OUTPUT_DIRECTORY}")
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE "${OUTPUT_DIRECTORY}")
-
-#set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+set(FILES ${HEADERS} ${SOURCES} ${CPLM_HEADERS} ${CPLM_SOURCES})
 
 add_executable(${PROJECT_NAME} ${FILES} ${CUDA_SOURCES})
 
@@ -151,10 +139,13 @@ if(MSVC)
 elseif(UNIX)
     set(DEFAULT_CXX_FLAGS "-Wall -O2 -std=c++20 -std=gnu++20 -march=x86-64-v3 -mavx2 -fno-exceptions")
     set(CMAKE_CXX_FLAGS "${DEFAULT_CXX_FLAGS}")
-    target_link_libraries(${PROJECT_NAME} MIMALLOC)
+    target_link_libraries(${PROJECT_NAME} MIMALLOC CUDA::cudart_static)
 elseif(APPLE)
 elseif(APPLE)
 endif()
+
+set_target_properties(${PROJECT_NAME} PROPERTIES CUDA_ARCHITECTURES "80;90")
+set_target_properties(${PROJECT_NAME} PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
 set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT ${PROJECT_NAME})
 set_target_properties(${PROJECT_NAME}

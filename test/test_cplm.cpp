@@ -4,6 +4,8 @@
 TEST_CASE("Load calm" "[cplm]")
 {
 	using namespace cplm;
+	int32_t count = getCudaDeviceCount();
+
 	Model model;
 	bool result = model.open("tinyllm.calm", 128);
 	CHECK(result);

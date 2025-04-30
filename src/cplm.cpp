@@ -133,6 +133,12 @@ void operator delete[](void* ptr, std::align_val_t alignment, const std::nothrow
 //     (void)ptr;
 // }
 
+void* upload_cuda(void* host, size_t size);
+void prepare_cuda(struct Transformer* transformer);
+float* forward_cuda(struct Transformer* transformer, int32_t token, int32_t pos, uint32_t flags);
+void perf_cuda(void);
+void free_cuda(void* device);
+
 namespace cplm
 {
 namespace
@@ -1387,12 +1393,18 @@ void Sampler::seed(uint64_t s)
 
 int32_t getCudaDeviceCount()
 {
+    if(CUDA_ERROR_NOT_INITIALIZED == cuInit(0)){
+        return 0;
+    }
     int32_t count = 0;
-    return CUDA_SUCCESS == cuDeviceGetCount(&count)? count : 0;
+    CUresult res = cuDeviceGetCount(&count);
+    return CUDA_SUCCESS == res? count : 0;
 }
 
 Model::Model()
+    :cuda_(false)
 {
+    cuda_ = 0<getCudaDeviceCount();
 }
 
 Model::~Model()
@@ -1454,6 +1466,15 @@ bool Model::open(uint64_t size, const void* data, int32_t context)
 		transformer_.n_bandwidth_ += mlp / transformer_.config_.n_experts_ * transformer_.config_.n_experts_ac_;
 	}
 
+    if (cuda_) {
+        for(size_t i=0; i<tensors_.tensors_.size(); ++i){
+            Tensor& tensor = tensors_.tensors_[i];
+            if (strncmp(tensor.name_, "model.", 6) == 0) {
+				tensor.device_ = upload_cuda(tensor.data_, tensor.size_);
+			}
+        }
+	}
+
     // sampler_.initialize(transformer_.config_.vocab_size_, 0, 1.0f, 0.1f);
     if(!prepare()) {
         close();
@@ -1480,6 +1501,16 @@ void Model::close()
     CPLM_FREE(s->key_cache_);
     CPLM_FREE(s->value_cache_);
     s->kvbits_ = 0;
+
+    if(cuda_) {
+        for(size_t i=0; i<tensors_.tensors_.size(); ++i){
+            Tensor& tensor = tensors_.tensors_[i];
+            if(nullptr  != tensor.device_){
+                free_cuda(tensor.device_);
+            tensor.device_ = nullptr;
+            }
+        }
+    }
 
     tensors_.close();
     tokenizer_.terminate();

@@ -194,14 +194,6 @@ private:
     int64_t duration_;
 };
 
-//--- ForwardFlags
-//---------------------------------------
-enum ForwardFlags
-{
-    FF_UPDATE_NONE = 0,
-    FF_UPDATE_KV_ONLY = 1 << 0, // only update kv cache and don't output logits
-};
-
 //--- DType
 //---------------------------------------
 enum DType
@@ -226,6 +218,7 @@ struct Tensor
     s32 shape_[4];
     u64 size_;
     void* data_;
+    void* device_;
 };
 
 //--- Metadata
@@ -262,6 +255,7 @@ public:
     float metadata_get_float(const char* name, float defaultValue = 0.0f);
 
 private:
+    friend class Model;
     Tensors(const Tensors&) = delete;
     Tensors& operator=(const Tensors&) = delete;
 
@@ -364,9 +358,6 @@ private:
 
 // CUDA devices
 int32_t getCudaDeviceCount();
-
-// How many attention sinks to use for rolling buffer
-static constexpr int32_t KV_SINKS = 2;
 }
 
 
@@ -430,6 +421,7 @@ private:
     uint64_t count_bytes(const char* prefix, const char* filter, uint64_t* out_params);
     uint64_t kvcache_bandwidth(int32_t kvbits, int32_t pos);
 
+    bool cuda_;
     Tensors tensors_;
     ::Transformer transformer_;
     Tokenizer tokenizer_;

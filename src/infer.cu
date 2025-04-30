@@ -105,8 +105,8 @@ extern "C" void prepare_cuda(struct Transformer* transformer) {
 	state->att_ = (float*)cuda_devicealloc(config->n_heads_ * config->seq_len_ * 2 * sizeof(float));
 
 	assert(state->kvbits_ == 8 || state->kvbits_ == 16);
-	state->key_cache_ = cuda_devicealloc((size_t)config->n_layers_ * config->seq_len_ * kv_dim * (state->kvbits / 8));
-	state->value_cache_ = cuda_devicealloc((size_t)config->n_layers_ * config->seq_len_ * kv_dim * (state->kvbits / 8));
+	state->key_cache_ = cuda_devicealloc((size_t)config->n_layers_ * config->seq_len_ * kv_dim * (state->kvbits_ / 8));
+	state->value_cache_ = cuda_devicealloc((size_t)config->n_layers_ * config->seq_len_ * kv_dim * (state->kvbits_ / 8));
 
 	// logits are going to be read by the host so we just allocate them in host and write to host directly
 	state->logits_ = (float*)cuda_hostalloc(config->vocab_size_ * sizeof(float));
@@ -128,6 +128,11 @@ extern "C" void prepare_cuda(struct Transformer* transformer) {
 	}
 
 	CUDA_CHECK(cudaMemcpyToSymbol(cooplayers, layers, sizeof(layers)));
+}
+
+extern "C" void free_cuda(void* device)
+{
+	cudaFree(device);
 }
 
 template <typename T>
@@ -330,18 +335,18 @@ __device__ static float rmsnorm(T* o, float* x, float* weight, int32_t size, flo
 }
 
 __device__ static void syncgrid() {
-	volatile unsigned int32_t* barrier = &cooperative_groups::details::get_grid_workspace()->barrier;
+	volatile uint32_t* barrier = &cooperative_groups::details::get_grid_workspace()->barrier;
 
 	if (threadIdx.x == 0) {
-		unsigned int32_t nb = 1;
+		uint32_t nb = 1;
 		if (blockIdx.x == 0) {
 			nb = 0x80000000 - (gridDim.x - 1);
 		}
 
-		unsigned int32_t old_arrive;
+		uint32_t old_arrive;
 		asm volatile("atom.add.release.gpu.u32 %0,[%1],%2;" : "=r"(old_arrive) : _CG_ASM_PTR_CONSTRAINT(barrier), "r"(nb) : "memory");
 
-		unsigned int32_t current_arrive;
+		uint32_t current_arrive;
 		do {
 			asm volatile("ld.acquire.gpu.u32 %0,[%1];" : "=r"(current_arrive) : _CG_ASM_PTR_CONSTRAINT(barrier) : "memory");
 		} while (((old_arrive ^ current_arrive) & 0x80000000) == 0);
@@ -650,37 +655,37 @@ __global__ static void kernel_output(uint64_t, float* xout, float* x, T* w, floa
 
 template <typename T, typename KVT, typename AT = float>
 static float* forward(struct Transformer* transformer, int32_t token, int32_t pos, unsigned flags) {
-	struct Config* p = &transformer->config;
-	struct Weights* w = &transformer->weights;
-	struct RunState* s = &transformer->state;
+	struct Config* p = &transformer->config_;
+	struct Weights* w = &transformer->weights_;
+	struct RunState* s = &transformer->state_;
 
 	// a few convenience variables
-	float* x = s->x;
-	int32_t dim = p->dim;
-	int32_t hidden_dim = p->hidden_dim;
-	int32_t kv_dim = p->head_dim * p->n_kv_heads;
-	size_t dbits = w->dbits; // size_t prevents integer overflow in multiplications below
+	float* x = s->x_;
+	int32_t dim = p->dim_;
+	int32_t hidden_dim = p->hidden_dim_;
+	int32_t kv_dim = p->head_dim_ * p->n_kv_heads_;
+	size_t dbits = w->dbits_; // size_t prevents integer overflow in multiplications below
 
 	// following "attention sinks" from StreamingLLM we keep the first few tokens in the KV cache as is
-	int32_t kv_sink = pos >= p->seq_len ? KV_SINKS : 0;
-	int32_t kv_pos = kv_sink + (pos - kv_sink) % (p->seq_len - kv_sink);
-	int32_t kv_len = pos >= p->seq_len ? p->seq_len : pos + 1;
+	int32_t kv_sink = pos >= p->seq_len_ ? CPLM_KV_SINKS : 0;
+	int32_t kv_pos = kv_sink + (pos - kv_sink) % (p->seq_len_ - kv_sink);
+	int32_t kv_len = pos >= p->seq_len_ ? p->seq_len_ : pos + 1;
 
 	// ensure all dimensions are warp-aligned
 	assert(dim % 32 == 0 && kv_dim % 32 == 0 && hidden_dim % 32 == 0);
 
 	// copy the token embedding into x
-	assert(token < p->vocab_size);
+	assert(token < p->vocab_size_);
 	kernel_embed<<<dim / 32, 32, 0, stream>>>(x, (T*)w->token_embedding_table_, token, dim);
 
 	// rotate sink tokens forward to keep pace with non-sink tokens
 	if (kv_sink > 0) {
-		kernel_rotate_sink<<<dim3(kv_sink * kv_dim / 64, p->n_layers), 32, 0, stream>>>(
-		    PROF_TOKEN(kv_sink * kv_dim * sizeof(KVT)), kv_dim, (KVT*)s->key_cache, p->head_dim, kv_sink, log2(p->rope_theta), p->seq_len, p->rotary_dim);
+		kernel_rotate_sink<<<dim3(kv_sink * kv_dim / 64, p->n_layers_), 32, 0, stream>>>(
+		    PROF_TOKEN(kv_sink * kv_dim * sizeof(KVT)), kv_dim, (KVT*)s->key_cache_, p->head_dim_, kv_sink, log2(p->rope_theta_), p->seq_len_, p->rotary_dim_);
 	}
 
 	// forward all the layers
-	size_t kvbw = p->n_kv_heads * p->head_dim * kv_len * sizeof(KVT) + p->n_heads * kv_len * sizeof(float);
+	size_t kvbw = p->n_kv_heads_ * p->head_dim_ * kv_len * sizeof(KVT) + p->n_heads_ * kv_len * sizeof(float);
 
 	uint64_t bw = 0;
 	bw += p->head_dim_ * (p->n_heads_ + p->n_kv_heads_ * 2) * dim * dbits / 8; // QKV
@@ -690,32 +695,32 @@ static float* forward(struct Transformer* transformer, int32_t token, int32_t po
 	bw *= p->n_layers_;
 
 	coopruns++;
-	coopperfbw[0] += (size_t)p->n_layers * (p->head_dim * (p->n_heads + p->n_kv_heads * 2) * dim * dbits / 8); // QKV
-	coopperfbw[1] += (size_t)p->n_layers * kvbw; // attn scoring
+	coopperfbw[0] += (size_t)p->n_layers_ * (p->head_dim_ * (p->n_heads_ + p->n_kv_heads_ * 2) * dim * dbits / 8); // QKV
+	coopperfbw[1] += (size_t)p->n_layers_ * kvbw; // attn scoring
 	coopperfbw[2] += 0; // attn softmax
-	coopperfbw[3] += (size_t)p->n_layers * kvbw; // attn mixing
-	coopperfbw[4] += (size_t)p->n_layers * (p->head_dim * p->n_heads * dim * dbits / 8); // attn output
-	coopperfbw[5] += (size_t)p->n_layers * (2 * (hidden_dim * dim * dbits / 8) * max(p->n_experts_ac, 1)); // MLP
-	coopperfbw[6] += (size_t)p->n_layers * (1 * (hidden_dim * dim * dbits / 8) * max(p->n_experts_ac, 1)); // MLP
+	coopperfbw[3] += (size_t)p->n_layers_ * kvbw; // attn mixing
+	coopperfbw[4] += (size_t)p->n_layers_ * (p->head_dim_ * p->n_heads_ * dim * dbits / 8); // attn output
+	coopperfbw[5] += (size_t)p->n_layers_ * (2 * (hidden_dim * dim * dbits / 8) * max(p->n_experts_ac_, 1)); // MLP
+	coopperfbw[6] += (size_t)p->n_layers_ * (1 * (hidden_dim * dim * dbits / 8) * max(p->n_experts_ac_, 1)); // MLP
 
 	CoopArgs<T, KVT> args = {
 		PROF_TOKEN(bw),
 		coopperf,
 		// token state
-		x, p->n_experts ? s->he : s->hb, s->q, s->att,
+		x, p->n_experts_ ? s->he_ : s->hb_, s->q_, s->att_,
 		// key/value cache; note that layers are passed via cooplayers[]
-		(KVT*)s->key_cache, (KVT*)s->value_cache,
+		(KVT*)s->key_cache_, (KVT*)s->value_cache_,
 		// model dimensions
-		p->n_layers,
-		dim, hidden_dim, p->head_dim,
-		p->n_heads, p->n_kv_heads, p->n_experts, max(p->n_experts_ac, 1),
-		p->seq_len, p->rotary_dim,
+		p->n_layers_,
+		dim, hidden_dim, p->head_dim_,
+		p->n_heads_, p->n_kv_heads_, p->n_experts_, max(p->n_experts_ac_, 1),
+		p->seq_len_, p->rotary_dim_,
 		// model configuration
-		p->norm_ln, p->act_gelu,
+		p->norm_ln_, p->act_gelu_,
 		// token position (and derived data)
 		kv_len, kv_pos, pos,
 		// model parameters
-		p->norm_eps, log2(p->rope_theta), p->qkv_clip,
+		p->norm_eps_, log2(p->rope_theta_), p->qkv_clip_,
 	};
 	void* argsp = &args;
 
@@ -732,17 +737,17 @@ static float* forward(struct Transformer* transformer, int32_t token, int32_t po
 
 	// classifier into logits
 	kernel_output<T, AT><<<coopsms * output_par, output_blk, dim * sizeof(AT), stream>>>(
-	    PROF_TOKEN(p->vocab_size * dim * dbits / 8), s->logits, x, (T*)w->wcls, w->rms_final_weight, dim, p->vocab_size, p->norm_eps, p->norm_ln);
+	    PROF_TOKEN(p->vocab_size_ * dim * dbits / 8), s->logits_, x, (T*)w->wcls_, w->rms_final_weight_, dim, p->vocab_size_, p->norm_eps_, p->norm_ln_);
 
 	CUDA_CHECK(cudaStreamSynchronize(stream));
 	CUDA_CHECK(cudaGetLastError()); // check for kernel launch errors; they might fail with OOM due to lazy kernel compilation
 
-	return s->logits;
+	return s->logits_;
 }
 
 extern "C" float* forward_cuda(struct Transformer* transformer, int32_t token, int32_t pos, unsigned flags) {
-#define CASE(dbits_, dtype, kvbits_, kvtype, atype)                                   \
-	if (transformer->weights.dbits == dbits_ && transformer->state.kvbits == kvbits_) \
+#define CASE(dbits, dtype, kvbits, kvtype, atype)                                   \
+	if (transformer->weights_.dbits_ == dbits && transformer->state_.kvbits_ == kvbits) \
 	return forward<dtype, kvtype, atype>(transformer, token, pos, flags)
 
 	CASE(4, uint32_t, 8, __nv_fp8_e5m2, float);

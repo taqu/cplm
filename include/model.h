@@ -2,6 +2,17 @@
 #define INC_CPLM_MODEL_H_
 #include <stdint.h>
 
+//--- ForwardFlags
+//---------------------------------------
+enum ForwardFlags
+{
+    FF_UPDATE_NONE = 0,
+    FF_UPDATE_KV_ONLY = 1 << 0, // only update kv cache and don't output logits
+};
+
+// How many attention sinks to use for rolling buffer
+#define CPLM_KV_SINKS (2)
+
 struct Config
 {
     int32_t dim_ = 0;          // transformer dimension
