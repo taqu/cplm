@@ -414,7 +414,7 @@ namespace
 
 } // namespace
 
-float* forward(Transformer* transformer, int32_t token, int32_t pos, uint32_t flags)
+float* forward(::Transformer* transformer, int32_t token, int32_t pos, uint32_t flags)
 {
     if(transformer->weights_.dbits_ != 4 && transformer->weights_.dbits_ != 8 && transformer->weights_.dbits_ != 16) {
         assert(!"Unsupported dbits: must be 8 or 16 for CPU");

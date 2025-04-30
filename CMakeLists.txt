@@ -1,9 +1,11 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.29)
 
 set(CMAKE_CONFIGURATION_TYPES "Debug" "Release")
 
 set(PROJECT_NAME cplm)
 project(${PROJECT_NAME})
+
+enable_language(CUDA)
 
 set(PROJECT_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(AFTER ${PROJECT_ROOT}/include)
@@ -98,10 +100,13 @@ set_target_properties(MIMALLOC PROPERTIES IMPORTED_LOCATION_DEBUG "mimalloc-stat
 #add_library(ONEDNN MODULE IMPORTED)
 #set_target_properties(ONEDNN PROPERTIES IMPORTED_LOCATION_DEBUG "dnnld.lib" IMPORTED_LOCATION_RELEASE "dnnl.lib")
 
+#find_package(CUDA REQUIRED)
+
 ########################################################################
 # Sources
 set(HEADERS
     "${HEADER_DIR}/cplm.h"
+    "${HEADER_DIR}/model.h"
     "${HEADER_DIR}/infer.h"
     "${HEADER_DIR}/gguf.h"
     "${HEADER_DIR}/utf8proc.h")
@@ -112,8 +117,13 @@ set(SOURCES
     "${SOURCE_DIR}/gguf.cpp"
     "${SOURCE_DIR}/utf8proc.c")
 
+set(CUDA_SOURCES
+    "${SOURCE_DIR}/infer.cu")
+set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};-gencode arch=compute_80,code=sm_80 -gencode arch=compute_90,code=compute_90 --threads 2 -std=c++20)
+#cuda_compile(INFER_O ${CUDA_SOURCES})
+
 source_group("include" FILES ${HEADERS})
-source_group("src" FILES ${SOURCES} "${SOURCE_DIR}/main.cpp")
+source_group("src" FILES ${SOURCES} "${SOURCE_DIR}/main.cpp" "${CUDA_SOURCES}")
 
 set(FILES ${HEADERS} ${SOURCES} "${SOURCE_DIR}/main.cpp")
 
@@ -124,7 +134,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE "${OUTPUT_DIRECTORY}")
 
 #set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-add_executable(${PROJECT_NAME} ${FILES})
+add_executable(${PROJECT_NAME} ${FILES} ${CUDA_SOURCES})
 
 if(MSVC)
     set(DEFAULT_CXX_FLAGS "/DWIN32 /D_WINDOWS /D_MBCS /W4 /WX- /nologo /fp:precise /arch:AVX2 /Zc:wchar_t /TP /Gd /std:c++20 /std:c11 /utf-8 /openmp")
@@ -136,7 +146,7 @@ if(MSVC)
     set(CMAKE_CXX_FLAGS "${DEFAULT_CXX_FLAGS}")
     set(CMAKE_CXX_FLAGS_DEBUG "/D_DEBUG /MTd /Zi /Ob0 /Od /RTC1 /Gy /GR /GS /Gm- /EHsc")
     set(CMAKE_CXX_FLAGS_RELEASE "/MT /O2 /Oi /GL /GR /DNDEBUG /EHsc-")
-    target_link_libraries(${PROJECT_NAME} MIMALLOC)
+    target_link_libraries(${PROJECT_NAME} MIMALLOC CUDA)
 
 elseif(UNIX)
     set(DEFAULT_CXX_FLAGS "-Wall -O2 -std=c++20 -std=gnu++20 -march=x86-64-v3 -mavx2 -fno-exceptions")

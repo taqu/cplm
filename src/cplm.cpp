@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <sstream>
 
+#include <cuda.h>
+
 #include <utf8proc.h>
 
 #include "infer.h"
@@ -1381,6 +1383,12 @@ int32_t Sampler::sample(float* logits) const
 void Sampler::seed(uint64_t s)
 {
     random_.seed(s);
+}
+
+int32_t getCudaDeviceCount()
+{
+    int32_t count = 0;
+    return CUDA_SUCCESS == cuDeviceGetCount(&count)? count : 0;
 }
 
 Model::Model()
