@@ -2,8 +2,8 @@
 #ifdef _WIN32
 #    include <Windows.h>
 #endif
-#include <limits>
 #include <algorithm>
+#include <limits>
 #include <sstream>
 
 #include <cuda.h>
@@ -133,11 +133,12 @@ void operator delete[](void* ptr, std::align_val_t alignment, const std::nothrow
 //     (void)ptr;
 // }
 
-void* upload_cuda(void* host, size_t size);
-void prepare_cuda(struct Transformer* transformer);
-float* forward_cuda(struct Transformer* transformer, int32_t token, int32_t pos, uint32_t flags);
-void perf_cuda(void);
-void free_cuda(void* device);
+extern "C" void* upload_cuda(void* host, size_t size);
+extern "C" bool prepare_cuda(struct Transformer* transformer);
+extern "C" void terminate_cuda(struct Transformer* transformer);
+extern "C" float* forward_cuda(struct Transformer* transformer, int32_t token, int32_t pos, uint32_t flags);
+extern "C" void perf_cuda(void);
+extern "C" void free_cuda(void* device);
 
 namespace cplm
 {
@@ -908,7 +909,7 @@ void* Tensors::get(const char* name, int32_t layer, DType dtype, std::initialize
         return nullptr;
     }
 
-    return tensor->data_;
+    return nullptr == tensor->device_? tensor->data_ : tensor->device_;
 }
 
 size_t Tensors::num_metadata() const
@@ -1393,18 +1394,18 @@ void Sampler::seed(uint64_t s)
 
 int32_t getCudaDeviceCount()
 {
-    if(CUDA_ERROR_NOT_INITIALIZED == cuInit(0)){
+    if(CUDA_ERROR_NOT_INITIALIZED == cuInit(0)) {
         return 0;
     }
     int32_t count = 0;
     CUresult res = cuDeviceGetCount(&count);
-    return CUDA_SUCCESS == res? count : 0;
+    return CUDA_SUCCESS == res ? count : 0;
 }
 
 Model::Model()
-    :cuda_(false)
+    : cuda_(false)
 {
-    cuda_ = 0<getCudaDeviceCount();
+    cuda_ = 0 < getCudaDeviceCount();
 }
 
 Model::~Model()
@@ -1419,29 +1420,7 @@ bool Model::open(const char* path, int32_t context)
     if(!tensors_.open(path)) {
         return false;
     }
-    get_config(context);
-    get_weights();
-    build_tokenizer();
-
-        transformer_.n_bytes_ = count_bytes("model.", nullptr, &transformer_.n_params_);
-    transformer_.forward_ = cplm::forward;
-    transformer_.n_bandwidth_ = transformer_.n_bytes_ - count_bytes("model.embed.", nullptr, nullptr);
-    if(nullptr == tensors_.find("model.output.weight", 0)){
-        transformer_.n_bandwidth_ += tensors_.find("model.embed.weight", 0)->size_;
-	}
-	if (0<transformer_.config_.n_experts_) {
-		uint64_t mlp = count_bytes("model.layers.", ".mlp.w", nullptr);
-		transformer_.n_bandwidth_ -= mlp;
-		transformer_.n_bandwidth_ += mlp / transformer_.config_.n_experts_ * transformer_.config_.n_experts_ac_;
-	}
-
-    // sampler_.initialize(transformer_.config_.vocab_size_, 0, 1.0f, 0.1f);
-    if(!prepare()) {
-        close();
-        return false;
-    }
-
-    return true;
+    return open(context);
 }
 
 bool Model::open(uint64_t size, const void* data, int32_t context)
@@ -1451,65 +1430,36 @@ bool Model::open(uint64_t size, const void* data, int32_t context)
     if(!tensors_.open(size, data)) {
         return false;
     }
-    get_config(context);
-    get_weights();
-    build_tokenizer();
-    transformer_.n_bytes_ = count_bytes("model.", nullptr, &transformer_.n_params_);
-    transformer_.forward_ = cplm::forward;
-    transformer_.n_bandwidth_ = transformer_.n_bytes_ - count_bytes("model.embed.", nullptr, nullptr);
-    if(nullptr == tensors_.find("model.output.weight", 0)){
-        transformer_.n_bandwidth_ += tensors_.find("model.embed.weight", 0)->size_;
-	}
-	if (0<transformer_.config_.n_experts_) {
-		uint64_t mlp = count_bytes("model.layers.", ".mlp.w", nullptr);
-		transformer_.n_bandwidth_ -= mlp;
-		transformer_.n_bandwidth_ += mlp / transformer_.config_.n_experts_ * transformer_.config_.n_experts_ac_;
-	}
-
-    if (cuda_) {
-        for(size_t i=0; i<tensors_.tensors_.size(); ++i){
-            Tensor& tensor = tensors_.tensors_[i];
-            if (strncmp(tensor.name_, "model.", 6) == 0) {
-				tensor.device_ = upload_cuda(tensor.data_, tensor.size_);
-			}
-        }
-	}
-
-    // sampler_.initialize(transformer_.config_.vocab_size_, 0, 1.0f, 0.1f);
-    if(!prepare()) {
-        close();
-        return false;
-    }
-    return true;
+    return open(context);
 }
 
 void Model::close()
 {
-    RunState* s = &transformer_.state_;
-
-    CPLM_FREE(s->x_);
-    CPLM_FREE(s->xb_);
-    CPLM_FREE(s->xb2_);
-    CPLM_FREE(s->hb_);
-    CPLM_FREE(s->hb2_);
-    CPLM_FREE(s->q_);
-    CPLM_FREE(s->k_);
-    CPLM_FREE(s->v_);
-    CPLM_FREE(s->att_);
-    CPLM_FREE(s->exp_);
-    CPLM_FREE(s->logits_);
-    CPLM_FREE(s->key_cache_);
-    CPLM_FREE(s->value_cache_);
-    s->kvbits_ = 0;
-
     if(cuda_) {
-        for(size_t i=0; i<tensors_.tensors_.size(); ++i){
+        terminate_cuda(&transformer_);
+        for(size_t i = 0; i < tensors_.tensors_.size(); ++i) {
             Tensor& tensor = tensors_.tensors_[i];
-            if(nullptr  != tensor.device_){
+            if(nullptr != tensor.device_) {
                 free_cuda(tensor.device_);
-            tensor.device_ = nullptr;
+                tensor.device_ = nullptr;
             }
         }
+    }else{
+        RunState* s = &transformer_.state_;
+        CPLM_FREE(s->x_);
+        CPLM_FREE(s->xb_);
+        CPLM_FREE(s->xb2_);
+        CPLM_FREE(s->hb_);
+        CPLM_FREE(s->hb2_);
+        CPLM_FREE(s->q_);
+        CPLM_FREE(s->k_);
+        CPLM_FREE(s->v_);
+        CPLM_FREE(s->att_);
+        CPLM_FREE(s->exp_);
+        CPLM_FREE(s->logits_);
+        CPLM_FREE(s->key_cache_);
+        CPLM_FREE(s->value_cache_);
+        s->kvbits_ = 0;
     }
 
     tensors_.close();
@@ -1520,7 +1470,7 @@ void Model::close()
 std::vector<Result> Model::generate(const char8_t* prompt, const Params& params)
 {
     std::vector<Result> results;
-    for(int32_t i=0; i<params.sequences_; ++i){
+    for(int32_t i = 0; i < params.sequences_; ++i) {
         results.push_back(generate_one(prompt, params));
     }
     return results;
@@ -1597,11 +1547,11 @@ Result Model::generate_one(const char8_t* prompt, const Params& params)
         }
     }
 
-    //fprintf(stderr, "# %d tokens: throughput: %.2f tok/s; latency: %.2f ms/tok; bandwidth: %.2f GB/s; total %.3f sec; #%08x\n",
-    //        pos,
-    //        pos / (double)(end - start) * 1000, (double)(end - start) / pos,
-    //        ((double)read_bytes / 1e9) / ((double)(end - start) / 1000),
-    //        (double)(end - start) / 1000, logits_hash);
+    // fprintf(stderr, "# %d tokens: throughput: %.2f tok/s; latency: %.2f ms/tok; bandwidth: %.2f GB/s; total %.3f sec; #%08x\n",
+    //         pos,
+    //         pos / (double)(end - start) * 1000, (double)(end - start) / pos,
+    //         ((double)read_bytes / 1e9) / ((double)(end - start) / 1000),
+    //         (double)(end - start) / 1000, logits_hash);
 
     result.text_ = ss.str();
     result.num_tokens_ = pos;
@@ -1614,6 +1564,48 @@ Result Model::generate_one(const char8_t* prompt, const Params& params)
 const float* Model::forward(int32_t token, int32_t pos, uint32_t flags)
 {
     return transformer_.forward_(&transformer_, token, pos, flags);
+}
+
+bool Model::open(int32_t context)
+{
+    get_config(context);
+    if(cuda_) {
+        transformer_.forward_ = forward_cuda;
+        for(size_t i = 0; i < tensors_.tensors_.size(); ++i) {
+            Tensor& tensor = tensors_.tensors_[i];
+            if(strncmp(tensor.name_, "model.", 6) == 0) {
+                tensor.device_ = upload_cuda(tensor.data_, tensor.size_);
+            }
+        }
+    } else {
+        transformer_.forward_ = cplm::forward;
+    }
+
+    get_weights();
+    build_tokenizer();
+    transformer_.n_bytes_ = count_bytes("model.", nullptr, &transformer_.n_params_);
+    transformer_.n_bandwidth_ = transformer_.n_bytes_ - count_bytes("model.embed.", nullptr, nullptr);
+    if(nullptr == tensors_.find("model.output.weight", 0)) {
+        transformer_.n_bandwidth_ += tensors_.find("model.embed.weight", 0)->size_;
+    }
+    if(0 < transformer_.config_.n_experts_) {
+        uint64_t mlp = count_bytes("model.layers.", ".mlp.w", nullptr);
+        transformer_.n_bandwidth_ -= mlp;
+        transformer_.n_bandwidth_ += mlp / transformer_.config_.n_experts_ * transformer_.config_.n_experts_ac_;
+    }
+
+    if(cuda_) {
+        if(!prepare_cuda(&transformer_)){
+            close();
+            return false;
+        }
+    } else {
+        if(!prepare()) {
+            close();
+            return false;
+        }
+    }
+    return true;
 }
 
 void Model::get_config(int32_t context)
@@ -1775,9 +1767,9 @@ uint64_t Model::count_bytes(const char* prefix, const char* filter, uint64_t* ou
 
 uint64_t Model::kvcache_bandwidth(int32_t kvbits, int32_t pos)
 {
-	int32_t kv_dim = transformer_.config_.head_dim_ * transformer_.config_.n_kv_heads_;
-	int32_t kv_len = pos >= transformer_.config_.seq_len_ ? transformer_.config_.seq_len_ : pos + 1;
-	return 2 * (uint64_t)(kvbits / 8) * transformer_.config_.n_layers_ * kv_dim * kv_len;
+    int32_t kv_dim = transformer_.config_.head_dim_ * transformer_.config_.n_kv_heads_;
+    int32_t kv_len = pos >= transformer_.config_.seq_len_ ? transformer_.config_.seq_len_ : pos + 1;
+    return 2 * (uint64_t)(kvbits / 8) * transformer_.config_.n_layers_ * kv_dim * kv_len;
 }
 
 } // namespace cplm

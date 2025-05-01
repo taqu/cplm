@@ -414,6 +414,7 @@ public:
 private:
     Model(const Model&) = delete;
     Model& operator=(const Model&) = delete;
+    bool open(int32_t context);
     void get_config(int32_t context);
     void get_weights();
     void build_tokenizer();

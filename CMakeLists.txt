@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.29)
 set(CMAKE_CONFIGURATION_TYPES "Debug" "Release")
 
 set(PROJECT_NAME cplm)
-project(${PROJECT_NAME})
+project(${PROJECT_NAME} CXX)
 
 enable_language(CUDA)
 
@@ -111,16 +111,15 @@ set(SOURCES
     ${SOURCE_DIR}/cplm.cpp
     ${SOURCE_DIR}/gguf.cpp
     ${SOURCE_DIR}/infer.cpp
-    ${SOURCE_DIR}/utf8proc.c
-    ${SOURCE_DIR}/main.cpp)
+    ${SOURCE_DIR}/utf8proc.c)
 
 set(CUDA_SOURCES
     ${SOURCE_DIR}/infer.cu)
 
 source_group("include" FILES ${HEADERS})
-source_group("src" FILES ${SOURCES} ${CUDA_SOURCES})
+source_group("src" FILES ${SOURCES} ${CUDA_SOURCES} ${SOURCE_DIR}/main.cpp)
 
-set(FILES ${HEADERS} ${SOURCES} ${CPLM_HEADERS} ${CPLM_SOURCES})
+set(FILES ${HEADERS} ${SOURCES} ${CPLM_HEADERS} ${CPLM_SOURCES} ${SOURCE_DIR}/main.cpp)
 
 add_executable(${PROJECT_NAME} ${FILES} ${CUDA_SOURCES})
 

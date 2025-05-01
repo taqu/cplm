@@ -60,20 +60,42 @@ static void* cuda_devicealloc(size_t size) {
 	return ptr;
 }
 
+static void cuda_devicefree(void* ptr)
+{
+	if(NULL == ptr){
+		return;
+	}
+	cudaFree(ptr);
+}
+
 static void* cuda_hostalloc(size_t size) {
 	void* ptr = NULL;
 	CUDA_CHECK(cudaHostAlloc(&ptr, size, 0));
 	return ptr;
 }
 
+static void cuda_hostfree(void* ptr)
+{
+	if(NULL == ptr){
+		return;
+	}
+	cudaFreeHost(ptr);
+}
+
 extern "C" void* upload_cuda(void* host, size_t size) {
 	return cuda_devicecopy(host, size);
 }
 
-extern "C" void prepare_cuda(struct Transformer* transformer) {
+extern "C" bool prepare_cuda(struct Transformer* transformer) {
 	struct Config* config = &transformer->config_;
 	struct Weights* weights = &transformer->weights_;
 	struct RunState* state = &transformer->state_;
+
+	if (4096<config->seq_len_) {
+		state->kvbits_ = 8; // for now use fp8 for larger contexts automatically without explicit control
+	}else{
+		state->kvbits_ = 16;
+	}
 
 	cudaDeviceProp devprop = {};
 	CUDA_CHECK(cudaGetDeviceProperties(&devprop, 0));
@@ -99,17 +121,41 @@ extern "C" void prepare_cuda(struct Transformer* transformer) {
 	int32_t kv_dim = config->head_dim_ * config->n_kv_heads_;
 
 	state->x_ = (float*)cuda_devicealloc(dim * sizeof(float));
+	if(NULL == state->x_){
+		return false;
+	}
 	state->hb_ = (float*)cuda_devicealloc(hidden_dim * sizeof(float));
+	if(NULL == state->hb_){
+		return false;
+	}
 	state->he_ = (float*)cuda_devicealloc(config->n_experts_ac_ * hidden_dim * sizeof(float));
+	if(0<config->n_experts_ac_ && NULL == state->he_){
+		return false;
+	}
 	state->q_ = (float*)cuda_devicealloc(q_dim * sizeof(float));
+	if(NULL == state->q_){
+		return false;
+	}
 	state->att_ = (float*)cuda_devicealloc(config->n_heads_ * config->seq_len_ * 2 * sizeof(float));
+	if(NULL == state->att_){
+		return false;
+	}
 
 	assert(state->kvbits_ == 8 || state->kvbits_ == 16);
 	state->key_cache_ = cuda_devicealloc((size_t)config->n_layers_ * config->seq_len_ * kv_dim * (state->kvbits_ / 8));
+	if(NULL == state->key_cache_){
+		return false;
+	}
 	state->value_cache_ = cuda_devicealloc((size_t)config->n_layers_ * config->seq_len_ * kv_dim * (state->kvbits_ / 8));
+	if(NULL == state->value_cache_){
+		return false;
+	}
 
 	// logits are going to be read by the host so we just allocate them in host and write to host directly
 	state->logits_ = (float*)cuda_hostalloc(config->vocab_size_ * sizeof(float));
+	if(NULL == state->logits_){
+		return false;
+	}
 
 	CoopLayer<void> layers[CPLM_MAX_LAYERS];
 	for (int32_t l = 0; l < config->n_layers_; ++l) {
@@ -128,6 +174,39 @@ extern "C" void prepare_cuda(struct Transformer* transformer) {
 	}
 
 	CUDA_CHECK(cudaMemcpyToSymbol(cooplayers, layers, sizeof(layers)));
+	return true;
+}
+
+extern "C" void terminate_cuda(struct Transformer* transformer) {
+	struct RunState* state = &transformer->state_;
+
+	cuda_hostfree(state->logits_);
+	state->logits_ = NULL;
+
+	cuda_devicefree(state->value_cache_);
+	state->value_cache_ = NULL;
+	cuda_devicefree(state->key_cache_);
+	state->key_cache_ = NULL;
+
+	cuda_devicefree(state->att_);
+	state->att_ = NULL;
+	cuda_devicefree(state->q_);
+	state->q_ = NULL;
+	cuda_devicefree(state->he_);
+	state->he_ = NULL;
+	cuda_devicefree(state->hb_);
+	state->hb_ = NULL;
+	cuda_devicefree(state->x_);
+	state->x_ = NULL;
+
+	state->kvbits_ = 0;
+	if(NULL != stream){
+		cudaStreamDestroy(stream);
+		stream = NULL;
+	}
+
+    cuda_devicefree(coopperf);
+    coopperf = NULL;
 }
 
 extern "C" void free_cuda(void* device)

@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2024 taqu
+Copyright (c) 2023-2024 Arseny Kapoulkine
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,19 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-Portion of this software is copied from calm.
-calm is provided by MIT License.
-Copyright (c) 2023-2024 Arseny Kapoulkine (https://github.com/zeux/calm)
-See doc/LICENSE_calm.md in detail.
-
-This software includes mimalloc.
-mimalloc is provided by MIT License.
-Copyright (c) 2018-2021 Microsoft Corporation, Daan Leijen (https://github.com/microsoft/mimalloc)
-See doc/LICENSE_mimalloc in detail.
-
-This software includes utf8proc.
-utf8proc is provided by MIT License.
-Copyright (c) 2014-2021 by Steven G. Johnson, Jiahao Chen, Tony Kelman, Jonas Fonseca (https://github.com/JuliaStrings/utf8proc)
-See doc/LICENSE_utf8proc.md in detail.
-
