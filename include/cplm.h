@@ -8,6 +8,7 @@
 #include <mimalloc.h>
 #include <vector>
 #include <string>
+#include <sstream>
 #include <initializer_list>
 #include "model.h"
 
@@ -86,6 +87,13 @@ using u64 = uint64_t;
 
 using f32 = float;
 using f64 = double;
+
+void log_print(const char* format, ...);
+#ifdef _DEBUG
+#define CPLM_LOG_PRINT(format, ...) cplm::log_print(format, __VA_ARGS__)
+#else
+#define CPLM_LOG_PRINT(format, ...) (void)0
+#endif
 
 struct Random
 {
@@ -248,11 +256,11 @@ public:
 
     size_t num_metadata() const;
     const Metadata& get_metadata(size_t index) const;
-    const char* metadata_find(const char* name);
-    const char* metadata_get(const char* name);
-    int32_t metadata_get_int32(const char* name, int32_t defaultValue = 0);
-    int64_t metadata_get_int64(const char* name, int64_t defaultValue = 0);
-    float metadata_get_float(const char* name, float defaultValue = 0.0f);
+    const char* metadata_find(const char* name) const;
+    const char* metadata_get(const char* name) const;
+    int32_t metadata_get_int32(const char* name, int32_t defaultValue = 0) const;
+    int64_t metadata_get_int64(const char* name, int64_t defaultValue = 0) const;
+    float metadata_get_float(const char* name, float defaultValue = 0.0f) const;
 
 private:
     friend class Model;
@@ -333,6 +341,7 @@ private:
     int32_t eot_id_;
     int32_t byte_fallbacks_;
     char byte_pieces_[256][2];
+    mutable std::basic_ostringstream<char8_t> ss_;
 };
 
 //--- Sampler
@@ -387,12 +396,19 @@ public:
         float minp_ = 0.1f;
         int32_t steps_ = 256;
         int32_t sequences_ = 1;
+        int32_t stop0_ = -1;
+        int32_t stop1_ = -1;
     };
     Model();
     ~Model();
     bool open(const char* path, int32_t context);
     bool open(uint64_t size, const void* data, int32_t context);
     void close();
+
+    bool is_cuda() const
+    {
+        return cuda_;
+    }
 
     const Tensors& get_tensors() const
     {
@@ -427,6 +443,7 @@ private:
     ::Transformer transformer_;
     Tokenizer tokenizer_;
     Sampler sampler_;
+    std::basic_ostringstream<char8_t> ss_;
 };
 } // namespace cplm
 #endif // INC_CPLM_H_
